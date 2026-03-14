@@ -25,7 +25,7 @@ The Archer AX10 runs a heavily modified version of LuCI with TP-Link's own encry
 After each reboot, connect via telnet and run:
 
 ```sh
-curl -4 -L -k -o /tmp/setup.sh https://github.com/lee-soft/LuCI-on-TP-Link-Archer-AX1500/blob/main/setup.sh && chmod +x /tmp/setup.sh && /tmp/setup.sh
+curl -4 -L -k -o /tmp/setup.sh https://raw.githubusercontent.com/lee-soft/LuCI-on-TP-Link-Archer-AX1500/main/setup.sh && chmod +x /tmp/setup.sh && /tmp/setup.sh
 ```
 
 Then open your browser at:
