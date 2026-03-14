@@ -5,7 +5,7 @@ kill -9 $(pgrep dropbear_vanilla) 2>/dev/null
 sleep 1
 
 echo "Downloading luci-deploy.zip..."
-curl -4 -L -k -o /tmp/luci-deploy.zip luci-deploy.zip
+curl -4 -L -k -o /tmp/luci-deploy.zip https://github.com/lee-soft/LuCI-on-TP-Link-Archer-AX1500/releases/download/v1.0/luci-deploy.zip
 
 echo "Extracting..."
 cd /tmp
