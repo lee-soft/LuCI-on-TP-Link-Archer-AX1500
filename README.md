@@ -38,7 +38,7 @@ SSH is available on port 2222 after the script runs.
 
 ## What the script does
 
-1. Downloads `luci-deploy.zip` from lee-soft.com
+1. Downloads `luci-deploy.zip` from lee-soft github
 2. Extracts and deploys vanilla OpenWrt Lua modules to `/usr/lib/lua/luci/`
 3. Configures the UCI luci config (mediaurlbase, themes)
 4. Sets the root password to empty
