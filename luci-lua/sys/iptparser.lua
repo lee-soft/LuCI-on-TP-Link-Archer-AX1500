@@ -298,4 +298,74 @@ function IptParser._parse_rules( self )
 					policy     = cpol,
 					packets    = tonumber(cpkt or 0),
 					bytes      = tonumber(cbytes or 0),
-					ref
+					references = tonumber(crefs or 0),
+					rules      = { }
+				}
+
+			else
+				if rule:find("%d") == 1 then
+
+					local rule_parts   = luci.util.split( rule, "%s+", nil, true )
+					local rule_details = { }
+
+					-- cope with rules that have no target assigned
+					if rule:match("^%d+%s+%d+%s+%d+%s%s") then
+						table.insert(rule_parts, 4, nil)
+					end
+
+					-- ip6tables opt column is usually zero-width
+					if self._family == 6 then
+						table.insert(rule_parts, 6, "--")
+					end
+
+					rule_details["table"]       = tbl
+					rule_details["chain"]       = self._chain
+					rule_details["index"]       = tonumber(rule_parts[1])
+					rule_details["packets"]     = tonumber(rule_parts[2])
+					rule_details["bytes"]       = tonumber(rule_parts[3])
+					rule_details["target"]      = rule_parts[4]
+					rule_details["protocol"]    = rule_parts[5]
+					rule_details["flags"]       = rule_parts[6]
+					rule_details["inputif"]     = rule_parts[7]
+					rule_details["outputif"]    = rule_parts[8]
+					rule_details["source"]      = rule_parts[9]
+					rule_details["destination"] = rule_parts[10]
+					rule_details["options"]     = { }
+
+					for i = 11, #rule_parts - 1 do
+						rule_details["options"][i-10] = rule_parts[i]
+					end
+
+					self._rules[#self._rules+1] = rule_details
+
+					self._chains[tbl][self._chain].rules[
+						#self._chains[tbl][self._chain].rules + 1
+					] = rule_details
+				end
+			end
+		end
+	end
+
+	self._chain = nil
+end
+
+
+-- [internal] Return true if optlist1 contains all elements of optlist 2.
+--            Return false in all other cases.
+function IptParser._match_options( self, o1, o2 )
+
+	-- construct a hashtable of first options list to speed up lookups
+	local oh = { }
+	for i, opt in ipairs( o1 ) do oh[opt] = true end
+
+	-- iterate over second options list
+	-- each string in o2 must be also present in o1
+	-- if o2 contains a string which is not found in o1 then return false
+	for i, opt in ipairs( o2 ) do
+		if not oh[opt] then
+			return false
+		end
+	end
+
+	return true
+end
