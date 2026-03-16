@@ -397,7 +397,7 @@ local function wifi_reconnect_shutdown(shutdown, wnet)
 		luci.sys.call("/sbin/wifi reload " .. devsid .. " >/dev/null 2>/dev/null")
 
 		if not shutdown then
-    			luci.sys.fork_exec("/usr/sbin/wl -i " .. devsid .. ".1 bss up")
+    		luci.sys.fork_exec("/usr/sbin/wl -i " .. devsid .. ".1 bss up")
 		end
 
 		luci.http.status(200, shutdown and "Shutdown" or "Reconnected")
