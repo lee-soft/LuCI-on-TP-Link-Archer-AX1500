@@ -111,6 +111,17 @@ The internal mechanics of how `wifi reload wl0` moves values from UCI to NVRAM t
 - WiFi takes ~30 seconds to come up after enabling — this is normal ACS channel selection time
 - Changes do not survive reboot — run the bootstrap command again after each reboot
 
+### Building the binaries
+Both binaries are cross-compiled using the GPL toolchain inside the waujito/tplax1500gpl:1.4 Docker environment.
+
+dropbear
+Download dropbear 2019.78 and compile with --host=arm-buildroot-linux-gnueabi, --disable-zlib, --disable-wtmp, --disable-lastlog.
+Stock dropbear is modified with a MAC-based lockout that triggers even before authentication — the vanilla binary bypasses this entirely.
+
+uhttpd
+Source is already in the GPL cache: ~/router/Iplatform/openwrt/dl/uhttpd-2012-10-30-*.tar.gz
+Compile with -DUBUS_SUPPORT=OFF -DTLS_SUPPORT=OFF -DLUA_SUPPORT=OFF. 
+
 ## Files
 | File | Description |
 |------|-------------|
