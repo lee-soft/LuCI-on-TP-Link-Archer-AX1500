@@ -974,6 +974,23 @@ function wifi.getiwinfo(ifname)
 	end
 end
 
+function wifi.up(dev)
+    os.execute("uci set wireless." .. (dev or "wl03") .. ".enable=on")
+    os.execute("uci set wireless." .. (dev or "wl03") .. ".lastenable=off")
+    os.execute("uci commit wireless")
+    os.execute("/sbin/wifi reload wl0 >/dev/null 2>/dev/null")
+    os.execute("/sbin/wifi reload wl1 >/dev/null 2>/dev/null")
+    return true
+end
+
+function wifi.down(dev)
+    os.execute("uci set wireless." .. (dev or "wl03") .. ".enable=off")
+    os.execute("uci set wireless." .. (dev or "wl03") .. ".lastenable=on")
+    os.execute("uci commit wireless")
+    os.execute("/sbin/wifi reload wl0 >/dev/null 2>/dev/null")
+    os.execute("/sbin/wifi reload wl1 >/dev/null 2>/dev/null")
+    return true
+end
 
 --- LuCI system utilities / init related functions.
 -- @class	module

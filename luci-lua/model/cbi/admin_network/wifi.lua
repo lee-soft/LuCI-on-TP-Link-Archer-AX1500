@@ -37,6 +37,23 @@ function m.on_commit(map)
 		ifsection.section = wnet.sid
 		m.title = luci.util.pcdata(wnet:get_i18n())
 	end
+	if wnet then
+		local sid = wnet.sid
+		local dev = wnet:get_device()
+		local devsid = dev and dev:name()
+		local disabled = m.uci:get("wireless", sid, "disabled")
+		if disabled == "1" then
+			m.uci:set("wireless", sid, "enable", "off")
+			m.uci:set("wireless", sid, "lastenable", "on")
+		else
+			m.uci:set("wireless", sid, "enable", "on")
+			m.uci:set("wireless", sid, "lastenable", "off")
+		end
+		m.uci:commit("wireless")
+		if devsid then
+			os.execute("/sbin/wifi reload " .. devsid .. " >/dev/null 2>/dev/null")
+		end
+	end
 end
 
 nw.init(m.uci)
@@ -319,7 +336,7 @@ end
 
 ------------------- Broadcom Device ------------------
 
-if hwtype == "broadcom" then
+if hwtype == "brcmwifi" then
 	tp = s:taboption("general",
 		(#tx_power_list > 0) and ListValue or Value,
 		"txpower", translate("Transmit Power"), "dBm")
@@ -602,7 +619,7 @@ end
 
 -------------------- Broadcom Interface ----------------------
 
-if hwtype == "broadcom" then
+if hwtype == "brcmwifi" then
 	mode:value("wds", translate("WDS"))
 	mode:value("monitor", translate("Monitor"))
 
@@ -690,7 +707,7 @@ function encr.write(self, section, value)
 	local e = tostring(encr:formvalue(section))
 	local c = tostring(cipher:formvalue(section))
 	if value == "wpa" or value == "wpa2"  then
-		self.map.uci:delete("wireless", section, "key")
+		self.map.uci:delete("wireless", section, "psk_key")
 	end
 	if e and (c == "tkip" or c == "ccmp" or c == "tkip+ccmp") then
 		e = e .. "+" .. c
@@ -766,7 +783,7 @@ if hwtype == "atheros" or hwtype == "mac80211" or hwtype == "prism2" then
 			"and ad-hoc mode) to be installed."
 		)
 	end
-elseif hwtype == "broadcom" then
+elseif hwtype == "brcmwifi" then
 	encr:value("psk", "WPA-PSK")
 	encr:value("psk2", "WPA2-PSK")
 	encr:value("psk+psk2", "WPA-PSK/WPA2-PSK Mixed Mode")
@@ -830,7 +847,7 @@ wpakey.rmempty = true
 wpakey.password = true
 
 wpakey.cfgvalue = function(self, section, value)
-	local key = m.uci:get("wireless", section, "key")
+	local key = m.uci:get("wireless", section, "psk_key")
 	if key == "1" or key == "2" or key == "3" or key == "4" then
 		return nil
 	end
@@ -838,7 +855,7 @@ wpakey.cfgvalue = function(self, section, value)
 end
 
 wpakey.write = function(self, section, value)
-	self.map.uci:set("wireless", section, "key", value)
+	self.map.uci:set("wireless", section, "psk_key", value)
 	self.map.uci:delete("wireless", section, "key1")
 end
 
@@ -852,7 +869,7 @@ wepslot:value("3", translatef("Key #%d", 3))
 wepslot:value("4", translatef("Key #%d", 4))
 
 wepslot.cfgvalue = function(self, section)
-	local slot = tonumber(m.uci:get("wireless", section, "key"))
+	local slot = tonumber(m.uci:get("wireless", section, "psk_key"))
 	if not slot or slot < 1 or slot > 4 then
 		return 1
 	end
@@ -860,7 +877,7 @@ wepslot.cfgvalue = function(self, section)
 end
 
 wepslot.write = function(self, section, value)
-	self.map.uci:set("wireless", section, "key", value)
+	self.map.uci:set("wireless", section, "psk_key", value)
 end
 
 local slot

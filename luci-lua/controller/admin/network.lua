@@ -382,20 +382,22 @@ end
 local function wifi_reconnect_shutdown(shutdown, wnet)
 	local netmd = require "luci.model.network".init()
 	local net = netmd:get_wifinet(wnet)
-	local dev = net:get_device()
+	local dev = net and net:get_device()
 	if dev and net then
-		luci.sys.call("env -i /sbin/wifi down >/dev/null 2>/dev/null")
-
-		dev:set("disabled", nil)
-		net:set("disabled", shutdown and 1 or nil)
-		netmd:commit("wireless")
-
-		luci.sys.call("env -i /sbin/wifi up >/dev/null 2>/dev/null")
+		local sid = net.sid
+		local devsid = dev:name()
+		if shutdown then
+			luci.sys.call("uci set wireless." .. sid .. ".enable=off")
+			luci.sys.call("uci set wireless." .. sid .. ".lastenable=on")
+		else
+			luci.sys.call("uci set wireless." .. sid .. ".enable=on")
+			luci.sys.call("uci set wireless." .. sid .. ".lastenable=off")
+		end
+		luci.sys.call("uci commit wireless")
+		luci.sys.call("/sbin/wifi reload " .. devsid .. " >/dev/null 2>/dev/null")
 		luci.http.status(200, shutdown and "Shutdown" or "Reconnected")
-
 		return
 	end
-
 	luci.http.status(404, "No such radio")
 end
 
