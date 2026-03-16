@@ -41,17 +41,15 @@ function m.on_commit(map)
 		local sid = wnet.sid
 		local dev = wnet:get_device()
 		local devsid = dev and dev:name()
-		local disabled = m.uci:get("wireless", sid, "disabled")
-		if disabled == "1" then
-			m.uci:set("wireless", sid, "enable", "off")
-			m.uci:set("wireless", sid, "lastenable", "on")
-		else
-			m.uci:set("wireless", sid, "enable", "on")
-			m.uci:set("wireless", sid, "lastenable", "off")
-		end
-		m.uci:commit("wireless")
 		if devsid then
+			-- Ensure device disabled=0 so wifi_security_config runs
+			m.uci:set("wireless", devsid, "disabled", "0")
+			m.uci:commit("wireless")
 			os.execute("/sbin/wifi reload " .. devsid .. " >/dev/null 2>/dev/null")
+			local enable = m.uci:get("wireless", sid, "enable")
+			if enable == "on" then
+				os.execute("/usr/sbin/wl -i " .. devsid .. ".1 bss up")
+			end
 		end
 	end
 end
@@ -704,15 +702,34 @@ function encr.cfgvalue(self, section)
 end
 
 function encr.write(self, section, value)
-	local e = tostring(encr:formvalue(section))
-	local c = tostring(cipher:formvalue(section))
-	if value == "wpa" or value == "wpa2"  then
-		self.map.uci:delete("wireless", section, "psk_key")
-	end
-	if e and (c == "tkip" or c == "ccmp" or c == "tkip+ccmp") then
-		e = e .. "+" .. c
-	end
-	self.map:set(section, "encryption", e)
+    local e = tostring(encr:formvalue(section))
+    local c = tostring(cipher:formvalue(section))
+    if value == "wpa" or value == "wpa2" then
+        self.map.uci:delete("wireless", section, "psk_key")
+    end
+    -- TP-Link brcmwifi translation (before cipher concatenation)
+    if hwtype == "brcmwifi" then
+        if e == "psk2" then
+            self.map.uci:set("wireless", section, "encryption", "psk")
+            self.map.uci:set("wireless", section, "psk_version", "rsn")
+            self.map.uci:set("wireless", section, "psk_cipher", "aes")
+        elseif e == "psk+psk2" then
+            self.map.uci:set("wireless", section, "encryption", "psk")
+            self.map.uci:set("wireless", section, "psk_version", "auto")
+            self.map.uci:set("wireless", section, "psk_cipher", "auto")
+        elseif e == "psk" then
+            self.map.uci:set("wireless", section, "encryption", "psk")
+            self.map.uci:set("wireless", section, "psk_version", "wpa")
+            self.map.uci:set("wireless", section, "psk_cipher", "auto")
+        else
+            self.map:set(section, "encryption", e)
+        end
+        return
+    end
+    if e and (c == "tkip" or c == "ccmp" or c == "tkip+ccmp") then
+        e = e .. "+" .. c
+    end
+    self.map:set(section, "encryption", e)
 end
 
 function cipher.cfgvalue(self, section)
