@@ -37,13 +37,17 @@ http://<router-ip>:8080/cgi-bin/luci
 SSH is available on port 2222 after the script runs.
 
 ## What the script does
-
-1. Downloads `luci-deploy.zip` from lee-soft github
+1. Downloads the repo zip from GitHub
 2. Extracts and deploys vanilla OpenWrt Lua modules to `/usr/lib/lua/luci/`
-3. Configures the UCI luci config (mediaurlbase, themes)
-4. Sets the root password to empty
-5. Starts vanilla dropbear SSH on port 2222
-6. Starts vanilla uhttpd on port 8080
+3. Deploys patched Lua modules for TP-Link WiFi compatibility:
+   - `sys.lua` — adds `wifi.up()` and `wifi.down()` calling `wifi reload wl0/wl1`
+   - `controller/admin/network.lua` — patches `wifi_reconnect_shutdown()` to use TP-Link's `enable`/`lastenable` UCI flags and per-radio reload
+   - `model/cbi/admin_network/wifi.lua` — adds `brcmwifi` hwtype, maps password field to `psk_key`, syncs `enable`/`lastenable` on save
+4. Clears LuCI module cache
+5. Configures the UCI luci config (mediaurlbase, themes)
+6. Sets the root password to empty
+7. Starts vanilla dropbear SSH on port 2222
+8. Starts vanilla uhttpd on port 8080
 
 ## Why this is non-trivial
 
@@ -59,12 +63,62 @@ TP-Link's modified LuCI stack required replacing the following core modules with
 
 The `libpath()` function in vanilla LuCI uses `debug.getinfo()` to find its own location on disk. TP-Link's modified `sauth.lua` was loading `luci.tools.debug` instead of `luci.debug`, causing `libpath()` to return `/usr/lib/lua/luci/tools` instead of `/usr/lib/lua/luci`, which broke all CBI model and template resolution.
 
-## Files
+## WiFi integration patches
 
+Getting WiFi toggle and configuration working from vanilla LuCI required some light  reverse engineering of TP-Link's proprietary WiFi management stack.
+
+### Architecture
+TP-Link completely bypasses OpenWrt's standard WiFi framework:
+- `/lib/wifi/brcmwifi.sh` — stub file, all hooks (`enable_brcmwifi`, `disable_brcmwifi` etc.) are empty no-ops
+- `/lib/wifi/tplink_brcm.sh` — ~5500 line real implementation (compiled LuaJIT bytecode for the web UI parts)
+- The actual WiFi management chain is: UCI → `wifi_nvram_config()` → NVRAM → `hapdsupport` → `hostapd` → driver
+
+### UCI field differences
+TP-Link uses different UCI field names to vanilla OpenWrt:
+
+| Vanilla OpenWrt | TP-Link AX10 |
+|---|---|
+| `key` | `psk_key` |
+| `disabled=1/0` | `enable=on/off` + `lastenable=on/off` |
+| `type=mac80211` | `type=brcmwifi` |
+| `wifi up/down` | `wifi reload wl0` / `wifi reload wl1` |
+
+### How WiFi enable/disable works
+TP-Link does not use OpenWrt's `disabled` flag to toggle WiFi. Instead it sets:
+- Enable: `uci set wireless.wl03.enable=on` + `lastenable=off`
+- Disable: `uci set wireless.wl03.enable=off` + `lastenable=on`
+
+Followed by `/sbin/wifi reload wl0` (per-radio, not a full reload). 
+
+### Password/security chain
+What I recall observing:
+1. Setting `psk_key` in UCI then running `/sbin/wifi reload wl0` results in `nvram get wl0.1_wpa_psk` returning the new value
+2. `/tmp/wl0.1_hapd.conf` is regenerated with the correct `wpa_passphrase`
+3. `hostapd` is launched with `-B /tmp/wl0.1_hapd.conf`
+4. WPA2 authentication works with the new password
+
+The internal mechanics of how `wifi reload wl0` moves values from UCI to NVRAM to hostapd config were not fully traced.
+
+### Files patched
+| File | Change |
+|---|---|
+| `luci/sys.lua` | Added `wifi.up()` and `wifi.down()` stubs calling `wifi reload wl0/wl1` |
+| `luci/controller/admin/network.lua` | Patched `wifi_reconnect_shutdown()` to set `enable`/`lastenable` and call per-radio reload |
+| `luci/model/cbi/admin_network/wifi.lua` | Added `brcmwifi` hwtype support, changed password field from `key` to `psk_key`, added `enable`/`lastenable` sync in `on_commit` |
+
+### Known limitations
+- 2.4GHz radio (wl1) occasionally drops after ~10 seconds on first bring-up — this is a pre-existing driver/acsd timing issue unrelated to LuCI, and resolves itself on the next reload
+- WiFi takes ~30 seconds to come up after enabling — this is normal ACS channel selection time
+- Changes do not survive reboot — run the bootstrap command again after each reboot
+
+## Files
 | File | Description |
 |------|-------------|
 | `setup.sh` | Bootstrap script — run this after every reboot |
-| `luci-deploy.zip` | Full deployment package (Lua modules, www files, binaries) |
+| `uhttpd_vanilla` | Vanilla OpenWrt uhttpd binary |
+| `dropbear_vanilla` | Vanilla OpenWrt dropbear binary |
+| `www-vanilla/` | Vanilla OpenWrt LuCI web files |
+| `luci-lua/` | Patched OpenWrt 0.11.1 Lua modules |
 
 ## Ports
 
