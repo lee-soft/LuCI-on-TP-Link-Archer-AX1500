@@ -102,7 +102,6 @@ The internal mechanics of how `wifi reload wl0` moves values from UCI to NVRAM t
 ### Files patched
 | File | Change |
 |---|---|
-| `luci/sys.lua` | Added `wifi.up()` and `wifi.down()` stubs calling `wifi reload wl0/wl1` |
 | `luci/controller/admin/network.lua` | Patched `wifi_reconnect_shutdown()` to set `enable`/`lastenable` and call per-radio reload |
 | `luci/model/cbi/admin_network/wifi.lua` | Added `brcmwifi` hwtype support, changed password field from `key` to `psk_key`, added `enable`/`lastenable` sync in `on_commit` |
 
