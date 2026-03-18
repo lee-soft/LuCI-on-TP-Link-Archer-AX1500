@@ -35,6 +35,23 @@ uci set luci.themes.OpenWrt=/luci-static/openwrt.org
 uci commit luci
 sed -i '/killersteel/d' /etc/config/luci
 
+echo "Installing OpenVPN init script..."
+cp /tmp/LuCI-on-TP-Link-Archer-AX1500-main/openvpn-init.d /etc/init.d/openvpn
+chmod +x /etc/init.d/openvpn
+
+echo "Setting up OpenVPN recipes..."
+cat > /etc/config/openvpn_recipes << 'EOF'
+config openvpn_recipe 'client'
+	option _description 'Custom OpenVPN Client'
+	option dev 'tun'
+	option proto 'udp'
+	option resolv_retry 'infinite'
+	option nobind '1'
+	option persist_key '1'
+	option persist_tun '1'
+	option verb '3'
+EOF
+
 echo "Clearing LuCI cache..."
 rm -f /tmp/luci-indexcache
 rm -f /tmp/luci-modulecache/*
