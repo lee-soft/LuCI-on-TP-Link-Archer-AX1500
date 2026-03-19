@@ -368,34 +368,38 @@ function wifi_status(devs)
 	local uci  = require("luci.model.uci").cursor()
 	local rv   = { }
 
+	-- Pre-build a map of ifname -> UCI encryption description for brcmwifi.
+	-- iwinfo misreads the split psk_version/psk_cipher fields, so we always
+	-- override with the UCI-derived string for any interface that uses them.
+	local enc_override = {}
+	uci:foreach("wireless", "wifi-iface", function(section)
+		local ifname = section.ifname
+		if not ifname then return end
+		local enc = section.encryption or "none"
+		local ver = section.psk_version or ""
+		local label
+		if     enc == "psk_sae" and ver == "sae_only"       then label = "WPA3-Personal"
+		elseif enc == "psk_sae" and ver == "sae_transition" then label = "WPA2/WPA3-Personal"
+		elseif enc == "psk"     and ver == "rsn"            then label = "WPA2-Personal"
+		elseif enc == "psk"     and ver == "wpa"            then label = "WPA-Personal"
+		elseif enc == "psk"     and ver == "auto"           then label = "WPA/WPA2-Personal"
+		elseif enc == "owe"                                 then label = "Enhanced Open (OWE)"
+		elseif enc == "wep"                                 then label = "WEP"
+		elseif enc == "wpa"     and ver == "rsn"            then label = "WPA2-Enterprise"
+		elseif enc == "wpa"                                 then label = "WPA-Enterprise"
+		elseif enc == "none"                                then label = "None"
+		end
+		if label then
+			enc_override[ifname] = label
+		end
+	end)
+
 	local dev
 	for dev in devs:gmatch("[%w%.%-]+") do
 		local iw = s.wifi_network(dev)
-
-		-- brcmwifi: iwinfo returns nil/empty encryption because it does not
-		-- understand the split psk_version/psk_cipher UCI fields.
-		-- Find the wifi-iface section whose ifname matches and rebuild the
-		-- encryption description from UCI before sending it to the browser.
-		if not iw.encryption or iw.encryption == "" then
-			uci:foreach("wireless", "wifi-iface", function(section)
-				if section.ifname == dev or section[".name"] == dev then
-					local enc = section.encryption or "none"
-					local ver = section.psk_version or ""
-					if     enc == "psk_sae" and ver == "sae_only"       then iw.encryption = "WPA3-Personal"
-					elseif enc == "psk_sae" and ver == "sae_transition" then iw.encryption = "WPA2/WPA3-Personal"
-					elseif enc == "psk"     and ver == "rsn"            then iw.encryption = "WPA2-Personal"
-					elseif enc == "psk"     and ver == "wpa"            then iw.encryption = "WPA-Personal"
-					elseif enc == "psk"     and ver == "auto"           then iw.encryption = "WPA/WPA2-Personal"
-					elseif enc == "owe"                                 then iw.encryption = "Enhanced Open (OWE)"
-					elseif enc == "wep"                                 then iw.encryption = "WEP"
-					elseif enc == "wpa"     and ver == "rsn"            then iw.encryption = "WPA2-Enterprise"
-					elseif enc == "wpa"                                 then iw.encryption = "WPA-Enterprise"
-					end
-					return false  -- stop iterating
-				end
-			end)
+		if enc_override[iw.ifname] then
+			iw.encryption = enc_override[iw.ifname]
 		end
-
 		rv[#rv+1] = iw
 	end
 
@@ -407,7 +411,6 @@ function wifi_status(devs)
 
 	luci.http.status(404, "No such device")
 end
-
 -- ------------------------------------------------------------
 -- wifi_reconnect_shutdown (internal)
 --
