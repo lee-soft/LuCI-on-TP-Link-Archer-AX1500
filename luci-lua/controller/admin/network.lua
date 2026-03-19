@@ -10,6 +10,11 @@ You may obtain a copy of the License at
 
 	http://www.apache.org/licenses/LICENSE-2.0
 
+brcmwifi changes vs upstream LuCI 0.11:
+  - wifi_reconnect_shutdown: uses per-radio reload + per-VIF bss up/down
+    instead of a full wifi down/up cycle.  ifname is read from UCI rather
+    than hard-coded to <radio>.1 so guest/IoT VIFs on wl1 etc. work.
+  - enable/disable flag is "enable=on/off" (TP-Link) not "disabled=1/0".
 ]]--
 
 module("luci.controller.admin.network", package.seeall)
@@ -24,7 +29,6 @@ function index()
 	page.order  = 50
 	page.index  = true
 
---	if page.inreq then
 		local has_switch = false
 
 		uci:foreach("network", "switch",
@@ -162,7 +166,6 @@ function index()
 
 		page = entry({"admin", "network", "diag_traceroute6"}, call("diag_traceroute6"), nil)
 		page.leaf = true
---	end
 end
 
 function wifi_join()
@@ -295,7 +298,6 @@ function iface_status(ifaces)
 					type       = device:type(),
 					ifname     = device:name(),
 					macaddr    = device:mac(),
-					macaddr    = device:mac(),
 					is_up      = device:is_up(),
 					rx_bytes   = device:rx_bytes(),
 					tx_bytes   = device:tx_bytes(),
@@ -363,11 +365,38 @@ end
 
 function wifi_status(devs)
 	local s    = require "luci.tools.status"
+	local uci  = require("luci.model.uci").cursor()
 	local rv   = { }
 
 	local dev
 	for dev in devs:gmatch("[%w%.%-]+") do
-		rv[#rv+1] = s.wifi_network(dev)
+		local iw = s.wifi_network(dev)
+
+		-- brcmwifi: iwinfo returns nil/empty encryption because it does not
+		-- understand the split psk_version/psk_cipher UCI fields.
+		-- Find the wifi-iface section whose ifname matches and rebuild the
+		-- encryption description from UCI before sending it to the browser.
+		if not iw.encryption or iw.encryption == "" then
+			uci:foreach("wireless", "wifi-iface", function(section)
+				if section.ifname == dev or section[".name"] == dev then
+					local enc = section.encryption or "none"
+					local ver = section.psk_version or ""
+					if     enc == "psk_sae" and ver == "sae_only"       then iw.encryption = "WPA3-Personal"
+					elseif enc == "psk_sae" and ver == "sae_transition" then iw.encryption = "WPA2/WPA3-Personal"
+					elseif enc == "psk"     and ver == "rsn"            then iw.encryption = "WPA2-Personal"
+					elseif enc == "psk"     and ver == "wpa"            then iw.encryption = "WPA-Personal"
+					elseif enc == "psk"     and ver == "auto"           then iw.encryption = "WPA/WPA2-Personal"
+					elseif enc == "owe"                                 then iw.encryption = "Enhanced Open (OWE)"
+					elseif enc == "wep"                                 then iw.encryption = "WEP"
+					elseif enc == "wpa"     and ver == "rsn"            then iw.encryption = "WPA2-Enterprise"
+					elseif enc == "wpa"                                 then iw.encryption = "WPA-Enterprise"
+					end
+					return false  -- stop iterating
+				end
+			end)
+		end
+
+		rv[#rv+1] = iw
 	end
 
 	if #rv > 0 then
@@ -379,13 +408,34 @@ function wifi_status(devs)
 	luci.http.status(404, "No such device")
 end
 
+-- ------------------------------------------------------------
+-- wifi_reconnect_shutdown (internal)
+--
+-- brcmwifi reload strategy:
+--   1. Set enable=on/off in UCI and commit.
+--   2. /sbin/wifi reload <radiodev>  -- per-radio, not full tear-down.
+--   3. wl -i <ifname> bss up/down   -- bring just the VIF up or down.
+--
+-- The ifname is read from the UCI section (the "ifname" field that
+-- TP-Link's wifi scripts write, e.g. "wl0.1", "wl1.1", "wl0.2").
+-- If it is absent we fall back to <radiodev>.1 for primary VIFs,
+-- but this is a best-effort fallback only.
+--
+-- We deliberately do NOT call "wifi down / wifi up" here because
+-- that tears down every radio and every VIF simultaneously, which
+-- causes a noticeable connectivity drop for all associated clients.
+-- ------------------------------------------------------------
 local function wifi_reconnect_shutdown(shutdown, wnet)
+	local uci   = require("luci.model.uci").cursor()
 	local netmd = require "luci.model.network".init()
-	local net = netmd:get_wifinet(wnet)
-	local dev = net and net:get_device()
+	local net   = netmd:get_wifinet(wnet)
+	local dev   = net and net:get_device()
+
 	if dev and net then
-		local sid = net.sid
+		local sid    = net.sid
 		local devsid = dev:name()
+
+		-- Update the TP-Link enable/lastenable flags
 		if shutdown then
 			luci.sys.call("uci set wireless." .. sid .. ".enable=off")
 			luci.sys.call("uci set wireless." .. sid .. ".lastenable=on")
@@ -394,15 +444,41 @@ local function wifi_reconnect_shutdown(shutdown, wnet)
 			luci.sys.call("uci set wireless." .. sid .. ".lastenable=off")
 		end
 		luci.sys.call("uci commit wireless")
+
+		-- Reload the radio so nvram/hapd config is regenerated
 		luci.sys.call("/sbin/wifi reload " .. devsid .. " >/dev/null 2>/dev/null")
 
-		if not shutdown then
-    		luci.sys.fork_exec("/usr/sbin/wl -i " .. devsid .. ".1 bss up")
+		-- Resolve the actual VIF interface name from UCI.
+		-- TP-Link stores the OS interface name in the ifname field of the
+		-- wifi-iface section (e.g. "wl0.1").  Fall back to <radio>.1 only
+		-- if that field is absent (e.g. after a manual UCI edit).
+		local ifname = uci:get("wireless", sid, "ifname")
+		if not ifname or ifname == "" then
+			-- Derive VIF number from section index as a best effort.
+			-- This counts all wifi-iface sections on the same device
+			-- to find our position, giving wl0.1, wl0.2, etc.
+			local vif_index = 1
+			uci:foreach("wireless", "wifi-iface", function(s)
+				if s[".name"] == sid then
+					return false  -- stop iterating
+				end
+				if s.device == devsid then
+					vif_index = vif_index + 1
+				end
+			end)
+			ifname = devsid .. "." .. vif_index
+		end
+
+		if shutdown then
+			luci.sys.fork_exec("/usr/sbin/wl -i " .. ifname .. " bss down")
+		else
+			luci.sys.fork_exec("/usr/sbin/wl -i " .. ifname .. " bss up")
 		end
 
 		luci.http.status(200, shutdown and "Shutdown" or "Reconnected")
 		return
 	end
+
 	luci.http.status(404, "No such radio")
 end
 
