@@ -15,10 +15,6 @@ function index()
 end
 
 function ovpn_upload()
-	local dbg = io.open("/tmp/upload-debug.log", "w")
-	local function dlog(s) dbg:write(tostring(s) .. "\n"); dbg:flush() end
-	dlog("ovpn_upload started")
-
 	local fs      = require("nixio.fs")
 	local http    = require("luci.http")
 	local uci     = require("luci.model.uci").cursor()
@@ -27,8 +23,6 @@ function ovpn_upload()
 	-- get name from URL path (last component)
 	local path = http.getenv("PATH_INFO") or ""
 	local name = path:match("/([^/]+)$")
-	dlog("name from URL=" .. tostring(name))
-
 	local file = nil
 	local fp   = nil
 
@@ -38,13 +32,9 @@ function ovpn_upload()
 
 	http.setfilehandler(
 		function(meta, chunk, eof)
-			dlog("handler meta.name=" .. tostring(meta and meta.name) ..
-				" chunk=" .. tostring(chunk and #chunk) ..
-				" eof=" .. tostring(eof))
 			if meta and meta.name == "ovpn_file" then
 				if not fp and file then
 					if not fs.stat(basedir) then fs.mkdir(basedir) end
-					dlog("opening file=" .. file)
 					fp = io.open(file, "w")
 				end
 			end
@@ -67,8 +57,6 @@ function ovpn_upload()
 	)
 
 	http.formvalue("ovpn_file")
-	dlog("after formvalue: name=" .. tostring(name) .. " file=" .. tostring(file))
-
 	if name and file and fs.access(file) then
 		local uci_name = name:gsub("-", "_")
 		uci:load("openvpn")
