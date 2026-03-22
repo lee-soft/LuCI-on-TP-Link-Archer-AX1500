@@ -187,19 +187,18 @@ if not skip_sta_lock then
 end
 
 if has_sta then
-	ch = s:taboption("general", DummyValue, "choice", translate("Channel"))
-	ch.value = translatef("Locked to channel %d used by %s",
-		has_sta:channel(), has_sta:shortname())
+    ch = s:taboption("general", DummyValue, "choice", translate("Channel"))
+    ch.value = translatef("Locked to channel %d used by %s",
+        has_sta:channel(), has_sta:shortname())
 else
-	ch = s:taboption("general", Value, "channel", translate("Channel"))
-	ch:value("auto", translate("auto"))
-	for _, f in ipairs(iw and iw.freqlist or { }) do
-		if not f.restricted then
-			ch:value(f.channel, "%i (%.3f GHz)" %{ f.channel, f.mhz / 1000 })
-		end
-	end
+    ch = s:taboption("general", Value, "channel", translate("Channel"))
+    ch:value("auto", translate("auto"))
+    for _, f in ipairs(iw and iw.freqlist or { }) do
+        if not f.restricted or f.mhz < 4000 then
+            ch:value(f.channel, "%i (%.3f GHz)" %{ f.channel, f.mhz / 1000 })
+        end
+    end
 end
-
 
 ------------------- MAC80211 Device ------------------
 

@@ -392,69 +392,79 @@ function iface_delete(iface)
 end
 
 function wifi_status(devs)
-    local s    = require "luci.tools.status"
-    local uci  = require("luci.model.uci").cursor()
-    local rv   = { }
-
+    local s   = require "luci.tools.status"
+    local uci = require("luci.model.uci").cursor()
+    local rv  = {}
     -- brcmwifi: build a friendly name map from UCI device sections.
     -- wl0 = 2.4 GHz radio, wl1 = 5 GHz radio (AX10 layout).
     local brcm_device_names = {}
     uci:foreach("wireless", "wifi-device", function(section)
-        local devname = section[".name"]  -- e.g. "wl0", "wl1"
+        local devname = section[".name"]
         local hwmode  = section.hwmode or ""
-        local band
-        if hwmode:find("ax") or hwmode:find("ac") or hwmode:find("na") then
-            band = "5 GHz"
-        else
-            band = "2.4 GHz"
-        end
-        -- You can extend this with model-specific chip names if you read
-        -- them from /proc/net/wl_wlX or `wl -i wlX ver`
+        local band    = (hwmode:find("ax") or hwmode:find("ac") or hwmode:find("na"))
+                        and "5 GHz" or "2.4 GHz"
         brcm_device_names[devname] = ("Broadcom 802.11ax Wireless (%s, %s)"):format(devname, band)
     end)
 
-    local enc_override = {}
-	uci:foreach("wireless", "wifi-iface", function(section)
-		local ifname = section.ifname
-		if not ifname then return end
-		local enc = section.encryption or "none"
-		local ver = section.psk_version or ""
-		local label
-		if     enc == "psk_sae" and ver == "sae_only"       then label = "WPA3-Personal"
-		elseif enc == "psk_sae" and ver == "sae_transition" then label = "WPA2/WPA3-Personal"
-		elseif enc == "psk"     and ver == "rsn"            then label = "WPA2-Personal"
-		elseif enc == "psk"     and ver == "wpa"            then label = "WPA-Personal"
-		elseif enc == "psk"     and ver == "auto"           then label = "WPA/WPA2-Personal"
-		elseif enc == "owe"                                 then label = "Enhanced Open (OWE)"
-		elseif enc == "wep"                                 then label = "WEP"
-		elseif enc == "wpa"     and ver == "rsn"            then label = "WPA2-Enterprise"
-		elseif enc == "wpa"                                 then label = "WPA-Enterprise"
-		elseif enc == "none"                                then label = "None"
-		end
-		if label then
-			enc_override[ifname] = label
-		end
-	end)
+    local brcm_radio_up = {}
+    local function radio_is_up(radiodev)
+        if brcm_radio_up[radiodev] == nil then
+            local fh = io.popen("/usr/sbin/wl -i " .. radiodev .. " isup 2>/dev/null")
+            if fh then
+                local out = fh:read("*l") or ""
+                fh:close()
+                brcm_radio_up[radiodev] = (out:match("^%s*1%s*$") ~= nil)
+            else
+                brcm_radio_up[radiodev] = false
+            end
+        end
+        return brcm_radio_up[radiodev]
+    end
 
-    local dev
+    local enc_override = {}
+    uci:foreach("wireless", "wifi-iface", function(section)
+        if not section.ifname then return end
+        local enc = section.encryption or "none"
+        local ver = section.psk_version or ""
+        local label
+        if     enc == "psk_sae" and ver == "sae_only"       then label = "WPA3-Personal"
+        elseif enc == "psk_sae" and ver == "sae_transition" then label = "WPA2/WPA3-Personal"
+        elseif enc == "psk"     and ver == "rsn"            then label = "WPA2-Personal"
+        elseif enc == "psk"     and ver == "wpa"            then label = "WPA-Personal"
+        elseif enc == "psk"     and ver == "auto"           then label = "WPA/WPA2-Personal"
+        elseif enc == "owe"                                 then label = "Enhanced Open (OWE)"
+        elseif enc == "wep"                                 then label = "WEP"
+        elseif enc == "wpa"     and ver == "rsn"            then label = "WPA2-Enterprise"
+        elseif enc == "wpa"                                 then label = "WPA-Enterprise"
+        elseif enc == "none"                                then label = "None"
+        end
+        if label then enc_override[section.ifname] = label end
+    end)
+
     for dev in devs:gmatch("[%w%.%-]+") do
         local iw = s.wifi_network(dev)
-        if enc_override[iw.ifname] then
-            iw.encryption = enc_override[iw.ifname]
+        if iw then
+            if enc_override[iw.ifname] then
+                iw.encryption = enc_override[iw.ifname]
+            end
+            if iw.device and iw.device.device then
+                local radiodev = iw.device.device
+                if brcm_device_names[radiodev] then
+                    iw.device.name = brcm_device_names[radiodev]
+                end
+                iw.device.up = radio_is_up(radiodev)
+            end
+            rv[#rv+1] = iw
         end
-
-        if iw.device and iw.device.device and brcm_device_names[iw.device.device] then
-            iw.device.name = brcm_device_names[iw.device.device]
-        end
-        rv[#rv+1] = iw
     end
-	if #rv > 0 then
-		luci.http.prepare_content("application/json")
-		luci.http.write_json(rv)
-		return
-	end
 
-	luci.http.status(404, "No such device")
+    if #rv > 0 then
+        luci.http.prepare_content("application/json")
+        luci.http.write_json(rv)
+        return
+    end
+
+    luci.http.status(404, "No such device")
 end
 -- ------------------------------------------------------------
 -- wifi_reconnect_shutdown (internal)

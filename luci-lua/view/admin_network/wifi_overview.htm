@@ -24,7 +24,7 @@ You may obtain a copy of the License at
 	ntm.init(uci)
 
 	function guess_wifi_hw(dev)
-		local bands = ""
+		local bands  = ""
 		local ifname = dev:name()
 		local name, idx = ifname:match("^([a-z]+)(%d+)")
 		idx = tonumber(idx)
@@ -32,10 +32,12 @@ You may obtain a copy of the License at
 		if has_iwinfo then
 			local bl = dev.iwinfo.hwmodelist
 			if bl and next(bl) then
-				if bl.a then bands = bands .. "a" end
-				if bl.b then bands = bands .. "b" end
-				if bl.g then bands = bands .. "g" end
-				if bl.n then bands = bands .. "n" end
+				if bl.b  then bands = bands .. "b"  end
+				if bl.g  then bands = bands .. "g"  end
+				if bl.n  then bands = bands .. "n"  end
+				if bl.a  then bands = bands .. "a"  end
+				if bl.ac then bands = bands .. "ac" end
+				if bl.ax then bands = bands .. "ax" end
 			end
 
 			local hw = dev.iwinfo.hardware_name
@@ -44,10 +46,10 @@ You may obtain a copy of the License at
 			end
 		end
 
-		-- wl.o
 		if name == "wl" then
-			local name = translatef("Broadcom 802.11%s Wireless Controller", bands)
-			local nm   = 0
+			-- Try to identify the exact BCM chip from PCI devices
+			local chipname = nil
+			local nm = 0
 
 			local fd = nixio.open("/proc/bus/pci/devices", "r")
 			if fd then
@@ -56,11 +58,9 @@ You may obtain a copy of the License at
 					if ln:match("wl$") then
 						if nm == idx then
 							local version = ln:match("^%S+%s+%S%S%S%S([0-9a-f]+)")
-							name = translatef(
-								"Broadcom BCM%04x 802.11 Wireless Controller",
-								tonumber(version, 16)
-							)
-
+							if version then
+								chipname = "BCM%04x" % tonumber(version, 16)
+							end
 							break
 						else
 							nm = nm + 1
@@ -70,25 +70,24 @@ You may obtain a copy of the License at
 				fd:close()
 			end
 
-			return name
+			if chipname then
+				return translatef("Broadcom %s 802.11%s Wireless Controller", chipname, bands)
+			else
+				return translatef("Broadcom 802.11%s Wireless Controller", bands)
+			end
 
-		-- madwifi
 		elseif name == "ath" or name == "wifi" then
 			return translatef("Atheros 802.11%s Wireless Controller", bands)
 
-		-- ralink
 		elseif name == "ra" then
 			return translatef("RaLink 802.11%s Wireless Controller", bands)
 
-		-- hermes
 		elseif name == "eth" then
 			return translate("Hermes 802.11b Wireless Controller")
 
-		-- hostap
 		elseif name == "wlan" and fs.isdirectory("/proc/net/hostap/" .. ifname) then
 			return translate("Prism2/2.5/3 802.11b Wireless Controller")
 
-		-- dunno yet
 		else
 			return translatef("Generic 802.11%s Wireless Controller", bands)
 		end

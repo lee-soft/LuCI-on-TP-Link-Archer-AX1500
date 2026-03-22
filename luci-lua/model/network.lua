@@ -1241,21 +1241,46 @@ function wifidev.hwmodes(self)
 end
 
 function wifidev.get_i18n(self)
-	local t = "Generic"
-	if self.iwinfo.type == "wl" then
-		t = "Broadcom"
-	elseif self.iwinfo.type == "madwifi" then
-		t = "Atheros"
-	end
+    local name = self.sid
+    local t    = "Generic"
 
-	local m = ""
-	local l = self:hwmodes()
-	if l.a then m = m .. "a" end
-	if l.b then m = m .. "b" end
-	if l.g then m = m .. "g" end
-	if l.n then m = m .. "n" end
+    if self.iwinfo.type == "wl" or name:match("^wl%d") then
+        local idx = tonumber(name:match("^wl(%d+)")) or 0
+        local nm  = 0
+        local chip = nil
+        local fd = require("nixio").open("/proc/bus/pci/devices", "r")
+        if fd then
+            for ln in fd:linesource() do
+                if ln:match("wl$") then
+                    if nm == idx then
+                        -- Field is vendoriddeviceid e.g. "14e4f6ca"
+                        -- Skip the 4-char vendor ID (14e4) to get device ID
+                        local device_id = ln:match("^%S+%s+%S%S%S%S(%S%S%S%S)")
+                        if device_id then
+                            chip = "BCM" .. device_id:upper()
+                        end
+                        break
+                    end
+                    nm = nm + 1
+                end
+            end
+            fd:close()
+        end
+        t = chip and ("Broadcom " .. chip) or "Broadcom"
+    elseif self.iwinfo.type == "madwifi" then
+        t = "Atheros"
+    end
 
-	return "%s 802.11%s Wireless Controller (%s)" %{ t, m, self:name() }
+    local m = ""
+    local l = self:hwmodes()
+    if l.a  then m = m .. "a"  end
+    if l.b  then m = m .. "b"  end
+    if l.g  then m = m .. "g"  end
+    if l.n  then m = m .. "n"  end
+    if l.ac then m = m .. "ac" end
+    if l.ax then m = m .. "ax" end
+
+    return "%s 802.11%s Wireless Controller (%s)" %{ t, m, self:name() }
 end
 
 function wifidev.is_up(self)
