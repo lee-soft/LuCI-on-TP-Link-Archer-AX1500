@@ -1271,14 +1271,15 @@ function wifidev.get_i18n(self)
         t = "Atheros"
     end
 
-    local m = ""
+    local parts = {}
     local l = self:hwmodes()
-    if l.a  then m = m .. "a"  end
-    if l.b  then m = m .. "b"  end
-    if l.g  then m = m .. "g"  end
-    if l.n  then m = m .. "n"  end
-    if l.ac then m = m .. "ac" end
-    if l.ax then m = m .. "ax" end
+    if l.b  then parts[#parts+1] = "b"  end
+    if l.g  then parts[#parts+1] = "g"  end
+    if l.a  then parts[#parts+1] = "a"  end
+    if l.n  then parts[#parts+1] = "n"  end
+    if l.ac then parts[#parts+1] = "ac" end
+    if l.ax then parts[#parts+1] = "ax" end
+    local m = table.concat(parts, "/")
 
     return "%s 802.11%s Wireless Controller (%s)" %{ t, m, self:name() }
 end
