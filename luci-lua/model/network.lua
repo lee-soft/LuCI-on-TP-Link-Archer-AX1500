@@ -1245,28 +1245,31 @@ function wifidev.get_i18n(self)
     local t    = "Generic"
 
     if self.iwinfo.type == "wl" or name:match("^wl%d") then
-        local idx = tonumber(name:match("^wl(%d+)")) or 0
-        local nm  = 0
-        local chip = nil
-        local fd = require("nixio").open("/proc/bus/pci/devices", "r")
-        if fd then
-            for ln in fd:linesource() do
-                if ln:match("wl$") then
-                    if nm == idx then
-                        -- Field is vendoriddeviceid e.g. "14e4f6ca"
-                        -- Skip the 4-char vendor ID (14e4) to get device ID
-                        local device_id = ln:match("^%S+%s+%S%S%S%S(%S%S%S%S)")
-                        if device_id then
-                            chip = "BCM" .. device_id:upper()
+        -- Prefer the name iwinfo gets directly from the driver
+        local hw = self.iwinfo.hardware_name
+        if hw and #hw > 0 then
+            t = "Broadcom " .. hw
+        else
+            -- Fall back to PCI device ID
+            local idx = tonumber(name:match("^wl(%d+)")) or 0
+            local nm  = 0
+            local fd  = require("nixio").open("/proc/bus/pci/devices", "r")
+            if fd then
+                for ln in fd:linesource() do
+                    if ln:match("wl$") then
+                        if nm == idx then
+                            local device_id = ln:match("^%S+%s+%S%S%S%S(%S%S%S%S)")
+                            if device_id then
+                                t = "Broadcom BCM" .. device_id:upper()
+                            end
+                            break
                         end
-                        break
+                        nm = nm + 1
                     end
-                    nm = nm + 1
                 end
+                fd:close()
             end
-            fd:close()
         end
-        t = chip and ("Broadcom " .. chip) or "Broadcom"
     elseif self.iwinfo.type == "madwifi" then
         t = "Atheros"
     end
@@ -1279,9 +1282,8 @@ function wifidev.get_i18n(self)
     if l.n  then parts[#parts+1] = "n"  end
     if l.ac then parts[#parts+1] = "ac" end
     if l.ax then parts[#parts+1] = "ax" end
-    local m = table.concat(parts, "/")
 
-    return "%s 802.11%s Wireless Controller (%s)" %{ t, m, self:name() }
+    return "%s 802.11%s Wireless Controller (%s)" %{ t, table.concat(parts, "/"), self:name() }
 end
 
 function wifidev.is_up(self)

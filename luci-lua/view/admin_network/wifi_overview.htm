@@ -40,9 +40,23 @@ You may obtain a copy of the License at
 				if bl.ax then bands = bands .. "ax" end
 			end
 
-			local hw = dev.iwinfo.hardware_name
-			if hw then
-				return "%s 802.11%s" %{ hw, bands }
+			if has_iwinfo then
+				local bl = dev.iwinfo.hwmodelist
+				local parts = {}
+				if bl and next(bl) then
+					if bl.b  then parts[#parts+1] = "b"  end
+					if bl.g  then parts[#parts+1] = "g"  end
+					if bl.a  then parts[#parts+1] = "a"  end
+					if bl.n  then parts[#parts+1] = "n"  end
+					if bl.ac then parts[#parts+1] = "ac" end
+					if bl.ax then parts[#parts+1] = "ax" end
+				end
+				local bands = table.concat(parts, "/")
+
+				local hw = dev.iwinfo.hardware_name
+				if hw then
+					return "%s 802.11%s" %{ hw, bands }
+				end
 			end
 		end
 
