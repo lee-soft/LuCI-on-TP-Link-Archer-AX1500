@@ -173,13 +173,17 @@ local htcaps = wdev:get("ht_capab") and true or false
 
 local nsantenna = wdev:get("antenna")
 
+local skip_sta_lock = (hwtype == "brcmwifi")
+
 local has_sta = nil
-local _, net
-for _, net in ipairs(wdev:get_wifinets()) do
-	if net:mode() == "sta" and net:id() ~= wnet:id() then
-		has_sta = net
-		break
-	end
+if not skip_sta_lock then
+    local _, net
+    for _, net in ipairs(wdev:get_wifinets()) do
+        if net:mode() == "sta" and net:id() ~= wnet:id() then
+            has_sta = net
+            break
+        end
+    end
 end
 
 if has_sta then

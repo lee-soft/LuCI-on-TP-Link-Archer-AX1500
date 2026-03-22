@@ -221,27 +221,55 @@ function wifi_add()
 end
 
 function wifi_delete(network)
-	local ntm = require "luci.model.network".init()
-	local wnet = ntm:get_wifinet(network)
-	if wnet then
-		local dev = wnet:get_device()
-		local nets = wnet:get_networks()
-		if dev then
-			luci.sys.call("env -i /sbin/wifi down %q >/dev/null" % dev:name())
-			ntm:del_wifinet(network)
-			ntm:commit("wireless")
-			local _, net
-			for _, net in ipairs(nets) do
-				if net:is_empty() then
-					ntm:del_network(net:name())
-					ntm:commit("network")
-				end
-			end
-			luci.sys.call("env -i /sbin/wifi up %q >/dev/null" % dev:name())
-		end
-	end
+    local uci   = require("luci.model.uci").cursor()
+    local ntm   = require "luci.model.network".init()
+    local wnet  = ntm:get_wifinet(network)
 
-	luci.http.redirect(luci.dispatcher.build_url("admin/network/wireless"))
+    if not wnet then
+        luci.http.status(404, "No such network")
+        return
+    end
+
+    -- Protect root VIFs: the first wifi-iface per device is the
+    -- primary BSS (root SSID). It must never be deleted from the UI.
+    -- We also honour an explicit is_root=1 UCI flag.
+    local dev = wnet:get_device()
+    if dev then
+        local is_root = uci:get("wireless", wnet.sid, "is_root")
+        if is_root == "1" then
+            luci.http.status(403, "Cannot delete root network")
+            return
+        end
+        -- Also protect implicitly: find the first wifi-iface for this device
+        local first_sid = nil
+        uci:foreach("wireless", "wifi-iface", function(s)
+            if s.device == dev:name() and not first_sid then
+                first_sid = s[".name"]
+            end
+        end)
+        if first_sid == wnet.sid then
+            luci.http.status(403, "Cannot delete root network")
+            return
+        end
+    end
+
+    -- Safe to delete
+    local nets = wnet:get_networks()
+    if dev then
+        luci.sys.call("env -i /sbin/wifi down %q >/dev/null" % dev:name())
+        ntm:del_wifinet(network)
+        ntm:commit("wireless")
+        local _, net
+        for _, net in ipairs(nets) do
+            if net:is_empty() then
+                ntm:del_network(net:name())
+                ntm:commit("network")
+            end
+        end
+        luci.sys.call("env -i /sbin/wifi up %q >/dev/null" % dev:name())
+    end
+
+    luci.http.redirect(luci.dispatcher.build_url("admin/network/wireless"))
 end
 
 function iface_status(ifaces)
@@ -364,14 +392,28 @@ function iface_delete(iface)
 end
 
 function wifi_status(devs)
-	local s    = require "luci.tools.status"
-	local uci  = require("luci.model.uci").cursor()
-	local rv   = { }
+    local s    = require "luci.tools.status"
+    local uci  = require("luci.model.uci").cursor()
+    local rv   = { }
 
-	-- Pre-build a map of ifname -> UCI encryption description for brcmwifi.
-	-- iwinfo misreads the split psk_version/psk_cipher fields, so we always
-	-- override with the UCI-derived string for any interface that uses them.
-	local enc_override = {}
+    -- brcmwifi: build a friendly name map from UCI device sections.
+    -- wl0 = 2.4 GHz radio, wl1 = 5 GHz radio (AX10 layout).
+    local brcm_device_names = {}
+    uci:foreach("wireless", "wifi-device", function(section)
+        local devname = section[".name"]  -- e.g. "wl0", "wl1"
+        local hwmode  = section.hwmode or ""
+        local band
+        if hwmode:find("ax") or hwmode:find("ac") or hwmode:find("na") then
+            band = "5 GHz"
+        else
+            band = "2.4 GHz"
+        end
+        -- You can extend this with model-specific chip names if you read
+        -- them from /proc/net/wl_wlX or `wl -i wlX ver`
+        brcm_device_names[devname] = ("Broadcom 802.11ax Wireless (%s, %s)"):format(devname, band)
+    end)
+
+    local enc_override = {}
 	uci:foreach("wireless", "wifi-iface", function(section)
 		local ifname = section.ifname
 		if not ifname then return end
@@ -394,15 +436,18 @@ function wifi_status(devs)
 		end
 	end)
 
-	local dev
-	for dev in devs:gmatch("[%w%.%-]+") do
-		local iw = s.wifi_network(dev)
-		if enc_override[iw.ifname] then
-			iw.encryption = enc_override[iw.ifname]
-		end
-		rv[#rv+1] = iw
-	end
+    local dev
+    for dev in devs:gmatch("[%w%.%-]+") do
+        local iw = s.wifi_network(dev)
+        if enc_override[iw.ifname] then
+            iw.encryption = enc_override[iw.ifname]
+        end
 
+        if iw.device and iw.device.device and brcm_device_names[iw.device.device] then
+            iw.device.name = brcm_device_names[iw.device.device]
+        end
+        rv[#rv+1] = iw
+    end
 	if #rv > 0 then
 		luci.http.prepare_content("application/json")
 		luci.http.write_json(rv)
