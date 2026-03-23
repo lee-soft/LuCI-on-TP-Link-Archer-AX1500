@@ -53,7 +53,7 @@ config openvpn_recipe 'client'
 EOF
 
 echo "Clearing LuCI cache..."
-rm -f /tmp/luci-indexcache
+rm -f /tmp/luci-indexcache-vanilla
 rm -f /tmp/luci-modulecache/*
 
 echo "Starting dropbear SSH on port 2222..."
@@ -63,6 +63,7 @@ echo "Starting vanilla uhttpd on port 8080..."
 (/tmp/uhttpd_vanilla -p 8080 -h /tmp/www-vanilla -x /cgi-bin -f </dev/null >/dev/null 2>&1) &
 
 echo "Pre-warming LuCI cache..."
+rm -f /tmp/luci-indexcache-vanilla
 lua -e '
 require "luci.dispatcher"
 luci.dispatcher.indexcache = "/tmp/luci-indexcache-vanilla"
