@@ -15,7 +15,6 @@ local f = open("/etc/openwrt_release")
 if f then
     for line in f:lines() do
         local k, v = line:match('^([%w_]+)="?([^"]*)"?$')
-        if k == "DISTRIB_ID"          then distname    = v end
         if k == "DISTRIB_DESCRIPTION" then distversion = v end
         if k == "DISTRIB_REVISION" and v ~= "unknown" then luciversion = v end
     end
