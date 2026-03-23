@@ -74,6 +74,5 @@ function ovpn_upload()
 		end
 	end
 
-	dbg:close()
 	http.redirect(luci.dispatcher.build_url("admin/services/openvpn"))
 end
