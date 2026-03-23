@@ -289,17 +289,19 @@ function sysinfo()
 	local bogomips = tonumber(cpuinfo:match("[Bb]ogo[Mm][Ii][Pp][Ss].-: ([^\n]+)")) or 0
 
 	local system =
-		cpuinfo:match("system type\t+: ([^\n]+)") or
-		cpuinfo:match("Processor\t+: ([^\n]+)") or
-		cpuinfo:match("model name\t+: ([^\n]+)")
+    		(fs.readfile("/proc/device-tree/model") or ""):match("([^%z]+)") or
+    		cpuinfo:match("system type\t+: ([^\n]+)") or
+    		cpuinfo:match("Processor\t+: ([^\n]+)") or
+    		cpuinfo:match("model name\t+: ([^\n]+)")
 
 	local model =
-		luci.util.pcdata(fs.readfile("/tmp/sysinfo/model")) or
-		cpuinfo:match("machine\t+: ([^\n]+)") or
-		cpuinfo:match("Hardware\t+: ([^\n]+)") or
-		luci.util.pcdata(fs.readfile("/proc/diag/model")) or
-		nixio.uname().machine or
-		system
+    		(fs.readfile("/proc/device-tree/model") or ""):match("([^%z]+)") or
+    		luci.util.pcdata(fs.readfile("/tmp/sysinfo/model")) or
+    		cpuinfo:match("machine\t+: ([^\n]+)") or
+    		cpuinfo:match("Hardware\t+: ([^\n]+)") or
+    		luci.util.pcdata(fs.readfile("/proc/diag/model")) or
+    		nixio.uname().machine or
+    		system
 
 	return system, model, memtotal, memcached, membuffers, memfree, bogomips
 end
