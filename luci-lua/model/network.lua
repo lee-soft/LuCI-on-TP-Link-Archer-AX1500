@@ -1248,7 +1248,7 @@ function wifidev.get_i18n(self)
         -- Prefer the name iwinfo gets directly from the driver
         local hw = self.iwinfo.hardware_name
         if hw and #hw > 0 then
-            t = "Broadcom " .. hw
+            t = hw
         else
             -- Fall back to PCI device ID
             local idx = tonumber(name:match("^wl(%d+)")) or 0
