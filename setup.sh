@@ -62,4 +62,9 @@ echo "Starting dropbear SSH on port 2222..."
 echo "Starting vanilla uhttpd on port 8080..."
 (/tmp/uhttpd_vanilla -p 8080 -h /tmp/www-vanilla -x /cgi-bin -f </dev/null >/dev/null 2>&1) &
 
+echo "Pre-warming LuCI cache..."
+for i in $(seq 1 10); do
+    curl -s -o /dev/null "http://127.0.0.1:8080/cgi-bin/luci/" 2>/dev/null && break
+    sleep 1
+done
 echo "Done! LuCI at http://$(uci get network.lan.ipaddr):8080/cgi-bin/luci"
