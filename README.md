@@ -1,5 +1,14 @@
 # Vanilla OpenWrt LuCI on TP-Link Archer AX10
 
+> ⚠️ **Superseded.** This early proof-of-concept has grown into a complete, packaged system —
+> a real `opkg` package manager, a modern **LuCI** web UI, a Broadcom wifi backend, and tiered
+> **TP-Link debloat** — all built from source and installed with one command.
+>
+> **Just want it working? → [archer-boot.pages.dev](https://archer-boot.pages.dev)**
+> · Source & docs: **[github.com/lee-soft/archer-ax10](https://github.com/lee-soft/archer-ax10)**
+>
+> This repo is kept for historical reference. New work happens in the project above.
+
 Run vanilla OpenWrt LuCI 0.11.1 alongside the stock TP-Link web interface on a rooted Archer AX10.
 
 ## Background
